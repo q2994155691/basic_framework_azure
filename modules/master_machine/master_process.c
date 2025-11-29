@@ -199,8 +199,10 @@ static uint8_t *vis_recv_buff;
 
 static void DecodeVision(uint16_t recv_len)
 {
-    uint16_t flag_register;
-    get_protocol_info(vis_recv_buff, &flag_register, (uint8_t *)&recv_data.pitch);
+    //uint16_t flag_register;
+    //get_protocol_info(vis_recv_buff, &flag_register, (uint8_t *)&recv_data.pitch);
+    
+    get_protocol_info(vis_recv_buff, &recv_data);  // ← 改為新接口
     // TODO: code to resolve flag_register;
 }
 
@@ -222,16 +224,15 @@ Vision_Recv_s *VisionInit(UART_HandleTypeDef *_handle)
     return &recv_data;
 }
 
-void VisionSend()
+void VisionSend(Vision_Send_s *tx_data)  // ← 添加參數
 {
-    static uint16_t flag_register;
     static uint8_t send_buff[VISION_SEND_SIZE];
-    static uint16_t tx_len;
-    // TODO: code to set flag_register
-    flag_register = 30 << 8 | 0b00000001;
-    // 将数据转化为seasky协议的数据包
-    get_protocol_send_data(0x02, flag_register, &send_data.yaw, 3, send_buff, &tx_len);
-    USBTransmit(send_buff, tx_len);
+    
+    // 使用新版打包函數
+    get_protocol_send_data(send_buff, tx_data);  // ← 只需要兩個參數
+    
+    // 發送固定長度
+    USBTransmit(send_buff, sizeof(Vision_Send_s));  // ← 固定長度
 }
 
 #endif // VISION_USE_VCP

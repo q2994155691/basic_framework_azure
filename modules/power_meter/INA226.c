@@ -1,4 +1,4 @@
-#include "ina226.h"
+#include "INA226.h"
 #include "i2c.h"
 
 /*
