@@ -189,6 +189,24 @@ static void EstimateSpeed()
     // 根据电机速度和陀螺仪的角速度进行解算,还可以利用加速度计判断是否打滑(如果有)
     // chassis_feedback_data.vx vy wz =
     //  ...
+    float wheel_speed_lf_dps = motor_lf->measure.speed_aps;
+    float wheel_speed_rf_dps = motor_rf->measure.speed_aps;
+    float wheel_speed_lb_dps = motor_lb->measure.speed_aps;
+    float wheel_speed_rb_dps = motor_rb->measure.speed_aps;
+    //逆运动学解算
+    float dps_to_mps = PERIMETER_WHEEL / 360.0f;
+    //转换为轮子线速度 
+    float vt_lf = wheel_speed_lf_dps * dps_to_mps;
+    float vt_rf = wheel_speed_rf_dps * dps_to_mps;
+    float vt_lb = wheel_speed_lb_dps * dps_to_mps;
+    float vt_rb = wheel_speed_rb_dps * dps_to_mps;
+
+    float vx = (-vt_lf + vt_rf - vt_lb + vt_rb) / 4.0f;
+    float vy = ( vt_lf + vt_rf + vt_lb + vt_rb) / 4.0f;
+
+
+    chassis_feedback_data.speed_vx = vx; 
+    chassis_feedback_data.speed_vy = vy; 
 }
 
 /* 机器人底盘控制核心任务 */
@@ -274,9 +292,6 @@ void ChassisTask()
     //添加弹速反馈
     chassis_feedback_data.initial_speed = referee_data->ShootData.initial_speed;
     //添加底盘速度控制指令反馈代码
-    chassis_feedback_data.speed_vx = chassis_cmd_recv.vx;
-    chassis_feedback_data.speed_vy = chassis_cmd_recv.vy;
-    chassis_feedback_data.speed_wz = chassis_cmd_recv.wz;
 
     PubPushMessage(chassis_pub, (void *)&chassis_feedback_data);
     // 根据裁判系统的反馈数据和电容数据对输出限幅并设定闭环参考值
