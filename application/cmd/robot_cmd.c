@@ -172,6 +172,7 @@ static void RemoteControlSet()
     {
         chassis_cmd_send.chassis_mode = CHASSIS_NO_FOLLOW;
         gimbal_cmd_send.gimbal_mode = GIMBAL_FREE_MODE;
+        
         robot_state = ROBOT_READY;  // 确保解除急停状态
     }
     else if (switch_is_up(rc_data[TEMP].rc.switch_right)) // 右侧开关[上] → 小陀螺
