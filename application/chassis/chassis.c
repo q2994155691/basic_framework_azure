@@ -23,6 +23,11 @@
 #include "referee_UI.h"
 #include "arm_math.h"
 
+// 专门用于 Ozone 调试的全局变量
+volatile float debug_Kp = 5.0f; // 这里填你现在的初始值
+volatile float debug_Ki = 0.2f;
+volatile float debug_Kd = 0.0f;
+
 /* 根据robot_def.h中的macro自动计算的参数 */
 #define HALF_WHEEL_BASE (WHEEL_BASE / 2.0f)     // 半轴距
 #define HALF_TRACK_WIDTH (TRACK_WIDTH / 2.0f)   // 半轮距
@@ -62,8 +67,8 @@ void ChassisInit()
         .can_init_config.can_handle = &hcan1,
         .controller_param_init_config = {
             .speed_PID = {
-                .Kp = 10, // 4.5
-                .Ki = 0,  // 0
+                .Kp = 4.5, // 4.5
+                .Ki = 0.2,  // 0
                 .Kd = 0,  // 0
                 .IntegralLimit = 3000,
                 .Improve = PID_Trapezoid_Intergral | PID_Integral_Limit | PID_Derivative_On_Measurement,
@@ -88,17 +93,20 @@ void ChassisInit()
     };
     //  @todo: 当前还没有设置电机的正反转,仍然需要手动添加reference的正负号,需要电机module的支持,待修改.
     chassis_motor_config.can_init_config.tx_id = 1;
-    chassis_motor_config.controller_setting_init_config.motor_reverse_flag = MOTOR_DIRECTION_REVERSE;
+    chassis_motor_config.controller_setting_init_config.motor_reverse_flag = MOTOR_DIRECTION_NORMAL;
     motor_lf = DJIMotorInit(&chassis_motor_config);
 
+    // 右前 RF -> ID 2
     chassis_motor_config.can_init_config.tx_id = 2;
-    chassis_motor_config.controller_setting_init_config.motor_reverse_flag = MOTOR_DIRECTION_REVERSE;
+    chassis_motor_config.controller_setting_init_config.motor_reverse_flag = MOTOR_DIRECTION_REVERSE; 
     motor_rf = DJIMotorInit(&chassis_motor_config);
 
+    // 左后 LB -> ID 4 
     chassis_motor_config.can_init_config.tx_id = 4;
-    chassis_motor_config.controller_setting_init_config.motor_reverse_flag = MOTOR_DIRECTION_REVERSE;
+    chassis_motor_config.controller_setting_init_config.motor_reverse_flag = MOTOR_DIRECTION_NORMAL;
     motor_lb = DJIMotorInit(&chassis_motor_config);
 
+    // 右后 RB -> ID 3 
     chassis_motor_config.can_init_config.tx_id = 3;
     chassis_motor_config.controller_setting_init_config.motor_reverse_flag = MOTOR_DIRECTION_REVERSE;
     motor_rb = DJIMotorInit(&chassis_motor_config);
@@ -145,11 +153,18 @@ void ChassisInit()
  */
 static void MecanumCalculate()
 {
-    vt_lf = -chassis_vx - chassis_vy - chassis_cmd_recv.wz * LF_CENTER;
-    vt_rf = -chassis_vx + chassis_vy - chassis_cmd_recv.wz * RF_CENTER;
-    vt_lb = chassis_vx - chassis_vy - chassis_cmd_recv.wz * LB_CENTER;
-    vt_rb = chassis_vx + chassis_vy - chassis_cmd_recv.wz * RB_CENTER;
-}
+    // X型安装解算公式
+    // 左前 (LF, ID:1): +vx - vy - wz
+    vt_lf = chassis_vx - chassis_vy - chassis_cmd_recv.wz * LF_CENTER;
+
+    // 右前 (RF, ID:2): +vx + vy + wz
+    vt_rf = chassis_vx + chassis_vy + chassis_cmd_recv.wz * RF_CENTER;
+
+    // 左后 (LB, ID:4): +vx + vy - wz
+    vt_lb = chassis_vx + chassis_vy - chassis_cmd_recv.wz * LB_CENTER;
+
+    // 右后 (RB, ID:3): +vx - vy + wz
+    vt_rb = chassis_vx - chassis_vy + chassis_cmd_recv.wz * RB_CENTER;}
 
 /**
  * @brief 根据裁判系统和电容剩余容量对输出进行限制并设置电机参考值
@@ -183,6 +198,32 @@ static void EstimateSpeed()
 /* 机器人底盘控制核心任务 */
 void ChassisTask()
 {
+    // ============================================
+    // 【新增】Ozone 实时调参覆盖逻辑
+    // 每次循环都把全局变量的值强制赋给电机结构体
+    if(motor_lf != NULL) {
+        motor_lf->motor_controller.speed_PID.Kp = debug_Kp;
+        motor_lf->motor_controller.speed_PID.Ki = debug_Ki;
+        motor_lf->motor_controller.speed_PID.Kd = debug_Kd;
+        
+        if(motor_rf) {
+             motor_rf->motor_controller.speed_PID.Kp = debug_Kp;
+             motor_rf->motor_controller.speed_PID.Ki = debug_Ki;
+             motor_rf->motor_controller.speed_PID.Kd = debug_Kd;
+        }
+        if(motor_lb) {
+             motor_lb->motor_controller.speed_PID.Kp = debug_Kp;
+             motor_lb->motor_controller.speed_PID.Ki = debug_Ki;
+             motor_lb->motor_controller.speed_PID.Kd = debug_Kd;
+        }
+        if(motor_rb) {
+             motor_rb->motor_controller.speed_PID.Kp = debug_Kp;
+             motor_rb->motor_controller.speed_PID.Ki = debug_Ki;
+             motor_rb->motor_controller.speed_PID.Kd = debug_Kd;
+        }
+    }
+    // ============================================
+
     // 后续增加没收到消息的处理(双板的情况)
     // 获取新的控制信息
 #ifdef ONE_BOARD
@@ -191,7 +232,7 @@ void ChassisTask()
 #ifdef CHASSIS_BOARD
     chassis_cmd_recv = *(Chassis_Ctrl_Cmd_s *)CANCommGet(chasiss_can_comm);
 #endif // CHASSIS_BOARD
-    chassis_cmd_recv.chassis_mode = CHASSIS_NO_FOLLOW;//调试用
+    // chassis_cmd_recv.chassis_mode = CHASSIS_NO_FOLLOW;//调试用
     
     if (chassis_cmd_recv.chassis_mode == CHASSIS_ZERO_FORCE)
     { // 如果出现重要模块离线或遥控器设置为急停,让电机停止
@@ -212,25 +253,33 @@ void ChassisTask()
     switch (chassis_cmd_recv.chassis_mode)
     {
     case CHASSIS_NO_FOLLOW: // 底盘不旋转,但维持全向机动,一般用于调整云台姿态
-        chassis_cmd_recv.wz = 0;
+        // chassis_cmd_recv.wz = 0;
         break;
     case CHASSIS_FOLLOW_GIMBAL_YAW: // 跟随云台,不单独设置pid,以误差角度平方为速度输出
         chassis_cmd_recv.wz = -1.5f * chassis_cmd_recv.offset_angle * abs(chassis_cmd_recv.offset_angle);
         break;
     case CHASSIS_ROTATE: // 自旋,同时保持全向机动;当前wz维持定值,后续增加不规则的变速策略
-        chassis_cmd_recv.wz = 4000;
+        chassis_cmd_recv.wz = 2000;
         break;
     default:
         break;
     }
 
-    // 根据云台和底盘的角度offset将控制量映射到底盘坐标系上
-    // 底盘逆时针旋转为角度正方向;云台命令的方向以云台指向的方向为x,采用右手系(x指向正北时y在正东)
-    static float sin_theta, cos_theta;
-    cos_theta = arm_cos_f32(chassis_cmd_recv.offset_angle * DEGREE_2_RAD);
-    sin_theta = arm_sin_f32(chassis_cmd_recv.offset_angle * DEGREE_2_RAD);
-    chassis_vx = chassis_cmd_recv.vx * cos_theta - chassis_cmd_recv.vy * sin_theta;
-    chassis_vy = chassis_cmd_recv.vx * sin_theta + chassis_cmd_recv.vy * cos_theta;
+    // =========================================================================
+    // 【修改点】暂时屏蔽底盘跟随云台的坐标系解算
+    // 强制把底盘坐标系对齐云台坐标系，排除 offset_angle 导致的斜跑干扰
+    // =========================================================================
+    // static float sin_theta, cos_theta;
+    // cos_theta = arm_cos_f32(chassis_cmd_recv.offset_angle * DEGREE_2_RAD);
+    // sin_theta = arm_sin_f32(chassis_cmd_recv.offset_angle * DEGREE_2_RAD);
+    // chassis_vx = chassis_cmd_recv.vx * cos_theta - chassis_cmd_recv.vy * sin_theta;
+    // chassis_vy = chassis_cmd_recv.vx * sin_theta + chassis_cmd_recv.vy * cos_theta;
+    
+    // 【修改为】直接赋值
+    chassis_vx = chassis_cmd_recv.vx;
+    chassis_vy = chassis_cmd_recv.vy;
+    // =========================================================================
+
 
     // 根据控制模式进行正运动学解算,计算底盘输出
     MecanumCalculate();
