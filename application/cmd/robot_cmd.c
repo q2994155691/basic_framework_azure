@@ -17,7 +17,7 @@
 #define YAW_ALIGN_ANGLE (YAW_CHASSIS_ALIGN_ECD * ECD_ANGLE_COEF_DJI) // 对齐时的角度,0-360
 #define PTICH_HORIZON_ANGLE (PITCH_HORIZON_ECD * ECD_ANGLE_COEF_DJI) // pitch水平时电机的角度,0-360
 
-/* cmd应用包含的模块实例指针和交互信息存储*/
+/* cmd应用包含的模块实例指针和交互信，息存储*/
 #ifdef GIMBAL_BOARD // 对双板的兼容,条件编译
 #include "can_comm.h"
 static CANCommInstance *cmd_can_comm; // 双板通信
@@ -196,14 +196,14 @@ static void RemoteControlSet()
     if (switch_is_down(rc_data[TEMP].rc.switch_left) || vision_recv_data->target_state == NO_TARGET)
     { // 按照摇杆的输出大小进行角度增量,增益系数需调整
         // gimbal_cmd_send.yaw += 0.005f * (float)rc_data[TEMP].rc.rocker_l_;
-        gimbal_cmd_send.pitch += 0.001f * (float)rc_data[TEMP].rc.rocker_l1;
+        // gimbal_cmd_send.pitch += 0.001f * (float)rc_data[TEMP].rc.rocker_l1;
         chassis_cmd_send.wz = -10.0f * (float)rc_data[TEMP].rc.rocker_l_; 
     }
     // 云台软件限位
 
     // 底盘参数,目前没有加入小陀螺(调试似乎暂时没有必要),系数需要调整
     chassis_cmd_send.vx = 200.0f * (float)rc_data[TEMP].rc.rocker_r1; 
-    chassis_cmd_send.vy = -200.0f * (float)rc_data[TEMP].rc.rocker_r_;
+    chassis_cmd_send.vy = 200.0f * (float)rc_data[TEMP].rc.rocker_r_;
 
     // 发射参数
     if (switch_is_up(rc_data[TEMP].rc.switch_right)) // 右侧开关状态[上],弹舱打开

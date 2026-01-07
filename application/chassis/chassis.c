@@ -32,7 +32,9 @@ volatile float debug_Kd = 0.0f;
 #define HALF_WHEEL_BASE (WHEEL_BASE / 2.0f)     // 半轴距
 #define HALF_TRACK_WIDTH (TRACK_WIDTH / 2.0f)   // 半轮距
 #define PERIMETER_WHEEL (RADIUS_WHEEL * 2 * PI) // 轮子周长
-
+// 全向轮旋转力臂系数 (简化版：轮子中心到车体几何中心的距离近似)
+// X型全向轮旋转时，力臂贡献为 R = (L+W)/2 对应的分量
+#define OMNI_ROTATION_COEFF (HALF_TRACK_WIDTH + HALF_WHEEL_BASE)
 /* 底盘应用包含的模块和信息存储,底盘是单例模式,因此不需要为底盘建立单独的结构体 */
 #ifdef CHASSIS_BOARD // 如果是底盘板,使用板载IMU获取底盘转动角速度
 #include "can_comm.h"
@@ -151,20 +153,33 @@ void ChassisInit()
  * @brief 计算每个轮毂电机的输出,正运动学解算
  *        用宏进行预替换减小开销,运动解算具体过程参考教程
  */
-static void MecanumCalculate()
+static void OmniCalculate()
 {
-    // X型安装解算公式
-    // 左前 (LF, ID:1): +vx - vy - wz
-    vt_lf = chassis_vx - chassis_vy - chassis_cmd_recv.wz * LF_CENTER;
+        // 1. 旋转分量
+    // 这里的 OMNI_ROTATION_COEFF 是 mm 级的大数值 (380+360=740左右)
+    // 乘以 wz 后，得到一个很大的旋转线速度控制量，与 vx, vy 量级匹配
+    // 如果觉得旋转太快，可以乘以一个系数如 0.5f，或者去 robot_cmd 调整
+    float v_wz = chassis_cmd_recv.wz * OMNI_ROTATION_COEFF* 0.02f;
 
-    // 右前 (RF, ID:2): +vx + vy + wz
-    vt_rf = chassis_vx + chassis_vy + chassis_cmd_recv.wz * RF_CENTER;
+    // 2. 投影系数
+    // 理论上 X 型全向轮分解系数是 sin(45) = 0.707
+    // 但为了响应更灵敏，工程上常设为 1.0 (忽略投影损失，让 PID 去追)
+    float ratio = 1.0f; 
 
-    // 左后 (LB, ID:4): +vx + vy - wz
-    vt_lb = chassis_vx + chassis_vy - chassis_cmd_recv.wz * LB_CENTER;
+    // 3. X型布局解算公式 (轮子与XY轴成45度)
+    // 左前 (LF, 1):  +vx + vy + wz
+    vt_lf = ( chassis_vx + chassis_vy) * ratio - v_wz;
 
-    // 右后 (RB, ID:3): +vx - vy + wz
-    vt_rb = chassis_vx - chassis_vy + chassis_cmd_recv.wz * RB_CENTER;}
+    // 右前 (RF, 2):  +vx - vy + wz
+    vt_rf = ( chassis_vx - chassis_vy) * ratio + v_wz;
+
+    // 左后 (LB, 4):  +vx - vy + wz   (注意：X型布局中 LB 和 RF 运动学对称)
+    vt_lb = ( chassis_vx - chassis_vy) * ratio - v_wz;
+
+    // 右后 (RB, 3):  +vx + vy + wz   (注意：X型布局中 RB 和 LF 运动学对称)
+    vt_rb = ( chassis_vx + chassis_vy) * ratio + v_wz;
+}
+
 
 /**
  * @brief 根据裁判系统和电容剩余容量对输出进行限制并设置电机参考值
@@ -282,7 +297,7 @@ void ChassisTask()
 
 
     // 根据控制模式进行正运动学解算,计算底盘输出
-    MecanumCalculate();
+    OmniCalculate();
 
     // 根据裁判系统的反馈数据和电容数据对输出限幅并设定闭环参考值
     LimitChassisOutput();
